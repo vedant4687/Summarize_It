@@ -3,17 +3,22 @@ from pydantic import BaseModel
 from transformers import AutoTokenizer
 from optimum.onnxruntime import ORTModelForSeq2SeqLM
 import re
+from contextlib import asynccontextmanager
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title="Summarize It", description="Text summarization app using ONNX T5 model", version="1.0.0")
-
 MODEL_NAME = "vsd4687/T5-Summarizer"
+tokenizer = None
+model = None
 
-# Load tokenizer & ONNX model from Hugging Face Hub
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = ORTModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global tokenizer, model
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = ORTModelForSeq2SeqLM.from_pretrained(MODEL_NAME, provider="CPUExecutionProvider")
+    yield
 
+app = FastAPI(title="Summarize It", version="1.0.0", lifespan=lifespan)
 templates = Jinja2Templates(directory=".")
 
 class DialogueInput(BaseModel):

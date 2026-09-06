@@ -1,8 +1,11 @@
-﻿fastapi
+﻿--extra-index-url https://download.pytorch.org/whl/cpu
+
+fastapi
 uvicorn
 jinja2
 pydantic
-transformers
+transformers==4.38.2
 sentencepiece
 optimum[onnxruntime]
 onnxruntime
+torch==2.2.1+cpu
