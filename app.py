@@ -1,28 +1,18 @@
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-from transformers import AutoTokenizer
-from optimum.onnxruntime import ORTModelForSeq2SeqLM
 import re
-from contextlib import asynccontextmanager
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+import streamlit as st
+import streamlit.components.v1 as components
+from transformers import T5Tokenizer
+from optimum.onnxruntime import ORTModelForSeq2SeqLM
 
 MODEL_NAME = "vsd4687/T5-Summarizer"
-tokenizer = None
-model = None
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global tokenizer, model
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+@st.cache_resource
+def load_model():
+    tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME, legacy=False)
     model = ORTModelForSeq2SeqLM.from_pretrained(MODEL_NAME, provider="CPUExecutionProvider")
-    yield
+    return tokenizer, model
 
-app = FastAPI(title="Summarize It", version="1.0.0", lifespan=lifespan)
-templates = Jinja2Templates(directory=".")
-
-class DialogueInput(BaseModel):
-    dialogue: str
+tokenizer, model = load_model()
 
 def clean_text(text: str) -> str:
     text = re.sub(r'\r\n', ' ', text)
@@ -36,11 +26,21 @@ def summarize_dialogue(dialogue: str) -> str:
     tokens = model.generate(**inputs, max_length=96, num_beams=2)
     return tokenizer.decode(tokens[0], skip_special_tokens=True)
 
-@app.post("/summarize")
-async def summarize(dialogue_input: DialogueInput):
-    summary = summarize_dialogue(dialogue_input.dialogue)
-    return {"summary": summary}
+# 1. Render custom HTML UI
+with open("index.html", "r", encoding="utf-8") as f:
+    html_code = f.read()
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+components.html(html_code, height=600, scrolling=True)
+
+# 2. Bridge Streamlit backend to UI (or native Streamlit fallback)
+st.sidebar.title("Summarize Text")
+user_input = st.sidebar.text_area("Enter Content:", height=200)
+
+if st.sidebar.button("Summarize"):
+    if user_input.strip():
+        with st.spinner("Generating summary..."):
+            summary = summarize_dialogue(user_input)
+            st.sidebar.subheader("Summary:")
+            st.sidebar.write(summary)
+    else:
+        st.sidebar.warning("Please enter content to summarize.")

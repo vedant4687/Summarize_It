@@ -1,9 +1,6 @@
 ﻿--extra-index-url https://download.pytorch.org/whl/cpu
 
-fastapi
-uvicorn
-jinja2
-pydantic
+streamlit
 transformers
 sentencepiece
 optimum[onnxruntime]
