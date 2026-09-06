@@ -1,45 +1,42 @@
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
-from transformers import T5Tokenizer, T5ForConditionalGeneration
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 import re
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 
+# initialize the FastAPI app
+app = FastAPI(title="Summarize It", description="Text summarization app using T5 model", version="1.0.0")
 
-#initialize the FastAPI app
-app= FastAPI(title= "Summarize It", description= "Text summarization app using T5 model", version= "1.0.0")
+# Hugging Face Model Path
+MODEL_NAME = "vsd4687/T5-Summarizer"
 
-#model and tokenizer initialization
-model= T5ForConditionalGeneration.from_pretrained("./saved_summary_model")
-tokenizer= T5Tokenizer.from_pretrained("./saved_summary_model")
+# model and tokenizer initialization
+model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-#device
-if torch.cuda.is_available():
-    device= torch.device("cuda")
-else:
-    device= torch.device("cpu")
-
+# device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-#Template setup
-templates= Jinja2Templates(directory= ".")
+# Template setup
+templates = Jinja2Templates(directory=".")
 
-#Input schema for the request body
+# Input schema for the request body
 class DialogueInput(BaseModel):
     dialogue: str
-    
-#Define clean data function
+
+# Define clean data function
 def clean_text(text):
-    text = re.sub(r'\r\n', ' ', text)  # Replace newlines with space
-    text = re.sub(r'\s+', ' ', text)  # Replace multiple spaces with a single space
-    text= re.sub(r'<.*?>', '', text)  # Remove HTML tags
-    text= text.strip()  # Remove leading and trailing whitespace
+    text = re.sub(r'\r\n', ' ', text)   # Replace newlines with space
+    text = re.sub(r'\s+', ' ', text)     # Replace multiple spaces with a single space
+    text = re.sub(r'<.*?>', '', text)    # Remove HTML tags
+    text = text.strip()                  # Remove leading and trailing whitespace
     return text
 
-#Summarization function
-def summarize_dialogue(dialogue: str)->str:
+# Summarization function
+def summarize_dialogue(dialogue: str) -> str:
     dialogue = clean_text(dialogue)
     
     # 1. Tokenize input
@@ -51,12 +48,21 @@ def summarize_dialogue(dialogue: str)->str:
         return_tensors="pt"
     ).to(device)
     
-    # 2. Generate summary with mixed precision for RTX 3060 speedup
+    # 2. Generate summary
     with torch.no_grad():
-        with torch.autocast(device_type="cuda", dtype=torch.float16):
+        if device.type == "cuda":
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                targets = model.generate(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    max_length=128,
+                    num_beams=4,
+                    early_stopping=True
+                )
+        else:
             targets = model.generate(
-                input_ids=inputs["input_ids"],            # Fixed variable name
-                attention_mask=inputs["attention_mask"],  # Fixed variable name
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
                 max_length=128,
                 num_beams=4,
                 early_stopping=True
@@ -65,9 +71,8 @@ def summarize_dialogue(dialogue: str)->str:
     # 3. Decode output tokens
     summary = tokenizer.decode(targets[0], skip_special_tokens=True)
     return summary
-    
-    
-#API Enpoints
+
+# API Endpoints
 @app.post("/summarize")
 async def summarize(dialogue_input: DialogueInput):
     summary = summarize_dialogue(dialogue_input.dialogue)
