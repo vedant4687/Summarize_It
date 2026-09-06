@@ -4,11 +4,16 @@ import streamlit.components.v1 as components
 from transformers import T5Tokenizer
 from optimum.onnxruntime import ORTModelForSeq2SeqLM
 
+# Page configuration
+st.set_page_config(page_title="Summarize It", layout="wide")
+
 MODEL_NAME = "vsd4687/T5-Summarizer"
 
 @st.cache_resource
 def load_model():
-    tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME, legacy=False)
+    # Load tokenizer from t5-small to access spiece.model correctly
+    tokenizer = T5Tokenizer.from_pretrained("t5-small", legacy=False)
+    # Load fine-tuned ONNX model weights
     model = ORTModelForSeq2SeqLM.from_pretrained(MODEL_NAME, provider="CPUExecutionProvider")
     return tokenizer, model
 
@@ -26,21 +31,21 @@ def summarize_dialogue(dialogue: str) -> str:
     tokens = model.generate(**inputs, max_length=96, num_beams=2)
     return tokenizer.decode(tokens[0], skip_special_tokens=True)
 
-# 1. Render custom HTML UI
+# 1. Display Custom UI HTML File
 with open("index.html", "r", encoding="utf-8") as f:
     html_code = f.read()
 
 components.html(html_code, height=600, scrolling=True)
 
-# 2. Bridge Streamlit backend to UI (or native Streamlit fallback)
-st.sidebar.title("Summarize Text")
-user_input = st.sidebar.text_area("Enter Content:", height=200)
+# 2. Streamlit Model Processing Controls
+st.sidebar.title("Text Summarizer")
+user_input = st.sidebar.text_area("Enter Content / Text:", height=220)
 
-if st.sidebar.button("Summarize"):
+if st.sidebar.button("Generate Summary"):
     if user_input.strip():
-        with st.spinner("Generating summary..."):
+        with st.sidebar.spinner("Generating summary..."):
             summary = summarize_dialogue(user_input)
-            st.sidebar.subheader("Summary:")
+            st.sidebar.subheader("Summary")
             st.sidebar.write(summary)
     else:
-        st.sidebar.warning("Please enter content to summarize.")
+        st.sidebar.warning("Please enter the Content to summarize.")
