@@ -1,61 +1,35 @@
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-import torch
+from transformers import AutoTokenizer
+from optimum.onnxruntime import ORTModelForSeq2SeqLM
 import re
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title="Summarize It", description="Text summarization app using T5 model", version="1.0.0")
+app = FastAPI(title="Summarize It", description="Text summarization app using ONNX T5 model", version="1.0.0")
 
 MODEL_NAME = "vsd4687/T5-Summarizer"
 
-# Load tokenizer
+# Load tokenizer & ONNX model from Hugging Face Hub
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-
-# Load model using low CPU memory usage
-model = AutoModelForSeq2SeqLM.from_pretrained(
-    MODEL_NAME, 
-    low_cpu_mem_usage=True,
-    torch_dtype=torch.float32
-)
-
-device = torch.device("cpu")
-model.to(device)
-model.eval()  # Disable training layers to reduce memory overhead
+model = ORTModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
 
 templates = Jinja2Templates(directory=".")
 
 class DialogueInput(BaseModel):
     dialogue: str
 
-def clean_text(text):
+def clean_text(text: str) -> str:
     text = re.sub(r'\r\n', ' ', text)
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r'<.*?>', '', text)
     return text.strip()
 
 def summarize_dialogue(dialogue: str) -> str:
-    dialogue = clean_text(dialogue)
-    
-    inputs = tokenizer(
-        dialogue, 
-        padding="max_length", 
-        truncation=True, 
-        max_length=256,  # Reduced max token length to save RAM
-        return_tensors="pt"
-    ).to(device)
-    
-    with torch.no_grad():  # Prevents storing gradient history in RAM
-        targets = model.generate(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            max_length=96,
-            num_beams=2,     # Reduced beam count from 4 to 2 to cut RAM usage during generation
-            early_stopping=True
-        )
-    
-    return tokenizer.decode(targets[0], skip_special_tokens=True)
+    cleaned = clean_text(dialogue)
+    inputs = tokenizer(cleaned, return_tensors="pt", max_length=256, truncation=True)
+    tokens = model.generate(**inputs, max_length=96, num_beams=2)
+    return tokenizer.decode(tokens[0], skip_special_tokens=True)
 
 @app.post("/summarize")
 async def summarize(dialogue_input: DialogueInput):
