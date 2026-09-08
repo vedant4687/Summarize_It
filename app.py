@@ -37,11 +37,11 @@ def summarize_dialogue(dialogue: str) -> str:
     tokens = model.generate(**inputs, max_length=96, num_beams=2)
     return tokenizer.decode(tokens[0], skip_special_tokens=True)
 
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
+
 @app.post("/summarize")
 async def summarize(dialogue_input: DialogueInput):
     summary = summarize_dialogue(dialogue_input.dialogue)
     return {"summary": summary}
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
